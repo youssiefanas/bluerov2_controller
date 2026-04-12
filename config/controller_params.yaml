@@ -1,0 +1,47 @@
+rov_controller:
+  ros__parameters:
+    # Control loop rate (Hz)
+    control_rate: 20.0
+
+    # MAVROS IMU stream rate (Hz)
+    mavros_stream_rate: 25
+
+    # PWM limits and scaling
+    pwm_neutral: 1500
+    pwm_min: 1100
+    pwm_max: 1900
+    pwm_scale: 400
+
+    # Light servo (pin 13)
+    light_pin: 13.0
+    light_min: 1100.0
+    light_max: 1900.0
+    light_initial: 1100.0
+    light_step: 100.0
+
+    # Camera tilt servo (pin 15)
+    camera_servo_pin: 15.0
+    servo_min: 1100.0
+    servo_max: 1850.0
+    tilt_initial: 1450.0
+    tilt_step: 100.0
+
+    # Joystick button mapping (Xbox controller defaults)
+    btn_arm: 7                  # Start
+    btn_disarm: 6               # Back
+    btn_manual_mode: 3          # Y  - ArduSub MANUAL (no stabilization)
+    btn_stabilize_mode: 2       # X  - ArduSub STABILIZE (auto-level roll/pitch)
+    btn_depth_hold_mode: 0      # A  - ArduSub DEPTH_HOLD (stabilize + hold depth)
+    btn_poshold_mode: 1         # B  - ArduSub POSHOLD (hold depth + position, needs DVL)
+    btn_cam_tilt_up: 4
+    btn_cam_tilt_down: 5
+    btn_cam_tilt_reset: 9
+    axis_light_up: 5
+    axis_light_down: 2
+    trigger_threshold: -0.9
+
+    # Initialization test on startup
+    run_initialization_test: false
+
+    # Service timeout (seconds)
+    service_timeout_sec: 4.0

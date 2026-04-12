@@ -1,0 +1,19 @@
+camera_streamer:
+  ros__parameters:
+    # UDP port for H.264 video stream from BlueOS
+    port: 5600
+
+    # H.264 decoder: "auto", "vaapih264dec", "nvh264dec", "avdec_h264"
+    decoder: "auto"
+
+    # Optional resize (disabled by default — publishes native resolution)
+    resize_enable: false
+    resize_width: 960
+    resize_height: 540
+
+    # ROS frame ID for the camera
+    frame_id: "bluerov2_camera"
+
+    # Pipeline health watchdog
+    watchdog_period_sec: 2.0
+    max_watchdog_failures: 3
