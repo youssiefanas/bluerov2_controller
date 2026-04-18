@@ -17,18 +17,11 @@ RovControllerNode::RovControllerNode(const rclcpp::NodeOptions &options)
   pwm_max_ = this->declare_parameter("pwm_max", 1900);
   pwm_scale_ = this->declare_parameter("pwm_scale", 400);
 
-  light_pin_ = this->declare_parameter("light_pin", 13.0);
-  light_min_ = this->declare_parameter("light_min", 1100.0);
-  light_max_ = this->declare_parameter("light_max", 1900.0);
-  light_pwm_ = this->declare_parameter("light_initial", 1100.0);
-  light_step_ = this->declare_parameter("light_step", 100.0);
-
-  camera_servo_pin_ = this->declare_parameter("camera_servo_pin", 15.0);
-  servo_min_ = this->declare_parameter("servo_min", 1100.0);
-  servo_max_ = this->declare_parameter("servo_max", 1850.0);
-  tilt_initial_ = this->declare_parameter("tilt_initial", 1450.0);
-  tilt_step_ = this->declare_parameter("tilt_step", 100.0);
-  tilt_pwm_ = tilt_initial_;
+tilt_angle_min_     = this->declare_parameter("tilt_angle_min", -90.0);
+  tilt_angle_max_     = this->declare_parameter("tilt_angle_max",  30.0);
+  tilt_angle_initial_ = this->declare_parameter("tilt_angle_initial", 0.0);
+  tilt_angle_step_    = this->declare_parameter("tilt_angle_step", 10.0);
+  tilt_angle_         = tilt_angle_initial_;
 
   btn_arm_ = this->declare_parameter("btn_arm", 7);
   btn_disarm_ = this->declare_parameter("btn_disarm", 6);
@@ -39,9 +32,6 @@ RovControllerNode::RovControllerNode(const rclcpp::NodeOptions &options)
   btn_cam_tilt_up_ = this->declare_parameter("btn_cam_tilt_up", 4);
   btn_cam_tilt_down_ = this->declare_parameter("btn_cam_tilt_down", 5);
   btn_cam_tilt_reset_ = this->declare_parameter("btn_cam_tilt_reset", 9);
-  axis_light_up_ = this->declare_parameter("axis_light_up", 5);
-  axis_light_down_ = this->declare_parameter("axis_light_down", 2);
-  trigger_threshold_ = this->declare_parameter("trigger_threshold", -0.9);
 
   service_timeout_sec_ = this->declare_parameter("service_timeout_sec", 4.0);
   bool run_init_test = this->declare_parameter("run_initialization_test", false);
@@ -110,6 +100,9 @@ RovControllerNode::RovControllerNode(const rclcpp::NodeOptions &options)
   // Set initial flight mode to MANUAL
   set_flight_mode(FlightMode::MANUAL);
 
+  // Put the camera mount in MAVLink targeting mode so it accepts pitch commands
+  set_mount_mode();
+
   // Run initialization test if requested
   if (run_init_test) {
     run_initialization_test();
@@ -174,11 +167,6 @@ void RovControllerNode::joy_callback(
     return index >= 0 && index < static_cast<int>(msg->buttons.size()) &&
            msg->buttons[index] == 1;
   };
-  auto axis = [&](int index) -> double {
-    return index >= 0 && index < static_cast<int>(msg->axes.size())
-               ? msg->axes[index]
-               : 0.0;
-  };
 
   // Arm / Disarm
   if (btn(btn_disarm_) && armed_) {
@@ -208,33 +196,32 @@ void RovControllerNode::joy_callback(
     set_flight_mode(FlightMode::POSHOLD);
   }
 
-  // Light control (trigger axes: 1.0 released, -1.0 fully pressed)
-  if (axis(axis_light_up_) < trigger_threshold_ && light_pwm_ < light_max_) {
-    light_pwm_ = std::min(light_pwm_ + light_step_, light_max_);
-    send_servo_command(light_pin_, light_pwm_);
-    RCLCPP_INFO(this->get_logger(), "Light PWM: %.0f", light_pwm_);
-  }
-  if (axis(axis_light_down_) < trigger_threshold_ && light_pwm_ > light_min_) {
-    light_pwm_ = std::max(light_pwm_ - light_step_, light_min_);
-    send_servo_command(light_pin_, light_pwm_);
-    RCLCPP_INFO(this->get_logger(), "Light PWM: %.0f", light_pwm_);
-  }
+// Camera tilt control (mount pitch in degrees) — edge-triggered so one
+  // button press = one step, regardless of joy publish rate.
+  bool tilt_up    = btn(btn_cam_tilt_up_);
+  bool tilt_dn    = btn(btn_cam_tilt_down_);
+  bool tilt_reset = btn(btn_cam_tilt_reset_);
 
-  // Camera tilt control
-  if (btn(btn_cam_tilt_up_) && !btn(btn_cam_tilt_down_) &&
-      tilt_pwm_ < servo_max_) {
-    tilt_pwm_ = std::min(tilt_pwm_ + tilt_step_, servo_max_);
-    send_servo_command(camera_servo_pin_, tilt_pwm_);
-    RCLCPP_INFO(this->get_logger(), "Tilt PWM: %.0f", tilt_pwm_);
-  } else if (btn(btn_cam_tilt_down_) && tilt_pwm_ > servo_min_) {
-    tilt_pwm_ = std::max(tilt_pwm_ - tilt_step_, servo_min_);
-    send_servo_command(camera_servo_pin_, tilt_pwm_);
-    RCLCPP_INFO(this->get_logger(), "Tilt PWM: %.0f", tilt_pwm_);
-  } else if (btn(btn_cam_tilt_reset_)) {
-    tilt_pwm_ = tilt_initial_;
-    send_servo_command(camera_servo_pin_, tilt_pwm_);
+  if (tilt_up && !prev_btn_tilt_up_ && !tilt_dn &&
+      tilt_angle_ < tilt_angle_max_) {
+    tilt_angle_ = std::min(tilt_angle_ + tilt_angle_step_, tilt_angle_max_);
+    send_mount_pitch(tilt_angle_);
+    RCLCPP_INFO(this->get_logger(), "Tilt angle: %.1f deg", tilt_angle_);
+  }
+  if (tilt_dn && !prev_btn_tilt_down_ && tilt_angle_ > tilt_angle_min_) {
+    tilt_angle_ = std::max(tilt_angle_ - tilt_angle_step_, tilt_angle_min_);
+    send_mount_pitch(tilt_angle_);
+    RCLCPP_INFO(this->get_logger(), "Tilt angle: %.1f deg", tilt_angle_);
+  }
+  if (tilt_reset && !prev_btn_tilt_reset_) {
+    tilt_angle_ = tilt_angle_initial_;
+    send_mount_pitch(tilt_angle_);
     RCLCPP_INFO(this->get_logger(), "Camera tilt reset");
   }
+
+  prev_btn_tilt_up_    = tilt_up;
+  prev_btn_tilt_down_  = tilt_dn;
+  prev_btn_tilt_reset_ = tilt_reset;
 }
 
 // ---------------------------------------------------------------------------
@@ -348,20 +335,39 @@ void RovControllerNode::set_stream_rate(int rate) {
 }
 
 // ---------------------------------------------------------------------------
-// Send servo command via MAV_CMD_DO_SET_SERVO (command 183)
+// Configure mount for MAVLink targeting (MAV_CMD_DO_MOUNT_CONFIGURE = 204)
 // ---------------------------------------------------------------------------
-void RovControllerNode::send_servo_command(double pin, double value) {
-  if (!cmd_client_->service_is_ready()) {
+void RovControllerNode::set_mount_mode() {
+  if (!cmd_client_->wait_for_service(
+          std::chrono::duration<double>(service_timeout_sec_))) {
     RCLCPP_WARN(this->get_logger(),
-                "cmd/command service not ready, skipping servo command");
+                "cmd/command service not available for mount configure");
     return;
   }
 
   auto request = std::make_shared<mavros_msgs::srv::CommandLong::Request>();
-  request->command = 183; // MAV_CMD_DO_SET_SERVO
-  request->param1 = static_cast<float>(pin);
-  request->param2 = static_cast<float>(value);
+  request->command = 204;  // MAV_CMD_DO_MOUNT_CONFIGURE
+  request->param1  = 2.0f; // MAV_MOUNT_MODE_MAVLINK_TARGETING
+  cmd_client_->async_send_request(request);
+  RCLCPP_INFO(this->get_logger(), "Mount set to MAVLink targeting mode");
+}
 
+// ---------------------------------------------------------------------------
+// Send camera mount pitch (MAV_CMD_DO_MOUNT_CONTROL = 205)
+// ---------------------------------------------------------------------------
+void RovControllerNode::send_mount_pitch(double pitch_deg) {
+  if (!cmd_client_->service_is_ready()) {
+    RCLCPP_WARN(this->get_logger(),
+                "cmd/command service not ready, skipping mount command");
+    return;
+  }
+
+  auto request = std::make_shared<mavros_msgs::srv::CommandLong::Request>();
+  request->command = 205;  // MAV_CMD_DO_MOUNT_CONTROL
+  request->param1  = static_cast<float>(pitch_deg); // pitch
+  request->param2  = 0.0f;                          // roll
+  request->param3  = 0.0f;                          // yaw
+  request->param7  = 2.0f; // MAV_MOUNT_MODE_MAVLINK_TARGETING
   cmd_client_->async_send_request(request);
 }
 
@@ -392,22 +398,14 @@ void RovControllerNode::run_initialization_test() {
     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
   };
 
-  // Flash light: current -> max -> min
-  send_servo_command(light_pin_, light_pwm_);
+  // Sweep camera mount pitch: initial -> max -> min -> initial
+  send_mount_pitch(tilt_angle_initial_);
   sleep_ms(500);
-  send_servo_command(light_pin_, light_max_);
+  send_mount_pitch(tilt_angle_max_);
   sleep_ms(500);
-  send_servo_command(light_pin_, light_min_);
+  send_mount_pitch(tilt_angle_min_);
   sleep_ms(500);
-
-  // Sweep camera tilt: neutral -> max -> min -> neutral
-  send_servo_command(camera_servo_pin_, tilt_initial_);
-  sleep_ms(500);
-  send_servo_command(camera_servo_pin_, servo_max_);
-  sleep_ms(500);
-  send_servo_command(camera_servo_pin_, servo_min_);
-  sleep_ms(500);
-  send_servo_command(camera_servo_pin_, tilt_initial_);
+  send_mount_pitch(tilt_angle_initial_);
 
   RCLCPP_INFO(this->get_logger(), "Initialization test completed");
 }

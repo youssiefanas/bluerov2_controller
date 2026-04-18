@@ -1,13 +1,13 @@
-teleop_twist_joy_node:
+/**:
   ros__parameters:
     axis_linear:
       x: 1
       y: 0
       z: 4
     scale_linear:
-      x: 0.7
-      y: 0.7
-      z: 0.7
+      x: 0.3
+      y: 0.3
+      z: 0.4
     scale_linear_turbo:
       x: 1.0
       y: 1.0
@@ -16,12 +16,12 @@ teleop_twist_joy_node:
     axis_angular:
       yaw: 3
       roll: 7
-      pitch: 6
+      pitch: 8
     scale_angular:
-      yaw: 0.4
-      roll: 0.2
-      pitch: 0.2
+      yaw: 0.3
+      roll: 0.3
+      pitch: -0.3
 
     require_enable_button: false
-    enable_button: 2
-    enable_turbo_button: 5
+    enable_button: -1
+    enable_turbo_button: -1

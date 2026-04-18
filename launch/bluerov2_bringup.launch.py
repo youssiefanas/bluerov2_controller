@@ -13,7 +13,7 @@ def generate_launch_description():
     namespace_arg = DeclareLaunchArgument(
         'namespace', default_value='bluerov2')
     fcu_url_arg = DeclareLaunchArgument(
-        'fcu_url', default_value='udp://192.168.2.1:14550@192.168.2.2')
+        'fcu_url', default_value='udp://:14550@192.168.2.2:14550')
     gcs_url_arg = DeclareLaunchArgument(
         'gcs_url', default_value='udp://@127.0.0.1')
     run_init_test_arg = DeclareLaunchArgument(

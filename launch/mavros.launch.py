@@ -12,6 +12,8 @@ def generate_launch_description():
         'fcu_url', default_value='udp://192.168.2.1:14550@192.168.2.2')
     gcs_url_arg = DeclareLaunchArgument(
         'gcs_url', default_value='udp://@127.0.0.1')
+    # log_level_arg = DeclareLaunchArgument(
+        # 'log_level', default_value='info')
 
     mavros_launch = IncludeLaunchDescription(
         AnyLaunchDescriptionSource(
@@ -21,10 +23,10 @@ def generate_launch_description():
         ),
         launch_arguments={
             'pluginlists_yaml': PathJoinSubstitution([
-                FindPackageShare('mavros'), 'launch', 'px4_pluginlists.yaml'
+                FindPackageShare('mavros'), 'launch', 'apm_pluginlists.yaml'
             ]),
             'config_yaml': PathJoinSubstitution([
-                FindPackageShare('mavros'), 'launch', 'px4_config.yaml'
+                FindPackageShare('mavros'), 'launch', 'apm_config.yaml'
             ]),
             'fcu_url': LaunchConfiguration('fcu_url'),
             'gcs_url': LaunchConfiguration('gcs_url'),

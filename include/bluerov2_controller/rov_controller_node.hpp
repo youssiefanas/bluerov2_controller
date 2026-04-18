@@ -111,11 +111,15 @@ private:
   void set_stream_rate(int rate);
 
   /**
-   * @brief Sends a MAV_CMD_DO_SET_SERVO command (command 183) to control a servo pin.
-   * @param pin Navigator board servo pin number (e.g., 13 for lights, 15 for camera tilt).
-   * @param value PWM value to set on the servo (1100-1900).
+   * @brief Configures the mount to MAVLINK targeting mode via MAV_CMD_DO_MOUNT_CONFIGURE (204).
    */
-  void send_servo_command(double pin, double value);
+  void set_mount_mode();
+
+  /**
+   * @brief Commands the camera mount pitch via MAV_CMD_DO_MOUNT_CONTROL (205).
+   * @param pitch_deg Desired pitch angle in degrees.
+   */
+  void send_mount_pitch(double pitch_deg);
 
   /**
    * @brief Publishes an RC override message with PWM values for all 6 DOF plus camera servos.
@@ -189,23 +193,22 @@ private:
   bool armed_{false};
 
   // Servo state
-  double light_pwm_;
-  double tilt_pwm_;
+  double tilt_angle_;  // camera mount pitch in degrees
+
+  // Previous button states for edge detection
+  bool prev_btn_tilt_up_{false};
+  bool prev_btn_tilt_down_{false};
+  bool prev_btn_tilt_reset_{false};
 
   // Parameters
   int pwm_neutral_;
   int pwm_min_;
   int pwm_max_;
   int pwm_scale_;
-  double light_pin_;
-  double light_min_;
-  double light_max_;
-  double light_step_;
-  double camera_servo_pin_;
-  double servo_min_;
-  double servo_max_;
-  double tilt_initial_;
-  double tilt_step_;
+  double tilt_angle_min_;
+  double tilt_angle_max_;
+  double tilt_angle_initial_;
+  double tilt_angle_step_;
   int btn_arm_;
   int btn_disarm_;
   int btn_manual_mode_;
@@ -215,9 +218,6 @@ private:
   int btn_cam_tilt_up_;
   int btn_cam_tilt_down_;
   int btn_cam_tilt_reset_;
-  int axis_light_up_;
-  int axis_light_down_;
-  double trigger_threshold_;
   double service_timeout_sec_;
 };
 

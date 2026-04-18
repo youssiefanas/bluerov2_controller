@@ -21,8 +21,8 @@ def generate_launch_description():
         namespace=LaunchConfiguration('namespace'),
         parameters=[{
             'device_id': 0,
-            'deadzone': 0.2,
-            'autorepeat_rate': 0.0,
+            'deadzone': 0.0,
+            'autorepeat_rate': 20.0,
         }],
         output='screen',
     )
