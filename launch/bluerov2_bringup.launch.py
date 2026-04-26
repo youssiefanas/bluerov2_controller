@@ -60,10 +60,10 @@ def generate_launch_description():
 
     return LaunchDescription([
         namespace_arg,
-        fcu_url_arg,
-        gcs_url_arg,
+        # fcu_url_arg,
+        # gcs_url_arg,
         run_init_test_arg,
-        mavros_launch,
+        # mavros_launch,
         gamepad_launch,
         controller_launch,
         camera_launch,
