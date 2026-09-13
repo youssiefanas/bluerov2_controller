@@ -25,8 +25,8 @@ C++ ROS 2 Jazzy package for controlling a BlueROV2 with BlueOS. Provides joystic
     /cmd/command, /rc/override      /camera/image
             │                               │
      ┌──────┴──────────────────┐            │
-     │    rov_controller       │            │
-     │  (joystick + control)   │            │
+     │    rov_controller       │◀── /bluerov2/cmd_vel_aux
+     │  (joystick + control)   │    (plain_pid_controller)
      └──────┬──────────────────┘            │
             │                               │
      ┌──────┴──────┐                        │
@@ -54,6 +54,7 @@ Replaces the Python `listenerMIR` node. Handles joystick input, motor control vi
 |---|---|---|
 | `joy` | sensor_msgs/Joy | joy_node |
 | `cmd_vel` | geometry_msgs/Twist | teleop_twist_joy |
+| `cmd_vel_aux` | geometry_msgs/Twist | plain_pid_controller (auxiliary velocity summed onto joystick commands) |
 | `imu/data` | sensor_msgs/Imu | MAVROS |
 | `global_position/rel_alt` | std_msgs/Float64 | MAVROS |
 
@@ -92,7 +93,7 @@ sudo apt install \
   ros-jazzy-mavros ros-jazzy-mavros-extras \
   ros-jazzy-joy ros-jazzy-teleop-twist-joy \
   ros-jazzy-image-transport ros-jazzy-image-transport-plugins \
-  ros-jazzy-cv-bridge
+  ros-jazzy-cv-bridge ros-jazzy-gscam
 ```
 
 ### 2. Install GeographicLib datasets
@@ -156,26 +157,35 @@ Access the BlueOS web interface at `http://192.168.2.2` for vehicle configuratio
 
 ## Usage
 
-### Full system launch
+### Standard Launch Sequence
 
+To operate the BlueROV2, run the following two commands across two terminals:
+
+#### Terminal 1: Launch MAVROS (Vehicle Bridge)
+Connects to the Pixhawk flight controller via MAVLink over UDP (`14550`):
+```bash
+ros2 launch bluerov2_controller mavros.launch.py
+```
+
+#### Terminal 2: Launch BlueROV2 Bringup
+Launches the Xbox gamepad node, the C++ `rov_controller` node, and the camera streamer:
 ```bash
 ros2 launch bluerov2_controller bluerov2_bringup.launch.py
 ```
 
+> **Note:** `bluerov2_bringup.launch.py` manages the host-side control stack (gamepad, `rov_controller`, camera). MAVROS is kept in its own launch file so MAVLink communication and telemetry streams can run or restart independently. Always start `mavros.launch.py` first.
+
 ### Individual launches
 
 ```bash
-# MAVROS only
-ros2 launch bluerov2_controller mavros.launch.py
-
 # Gamepad only
 ros2 launch bluerov2_controller gamepad.launch.py
 
 # Controller only (requires MAVROS running)
 ros2 launch bluerov2_controller controller.launch.py
 
-# Camera only
-ros2 launch bluerov2_controller camera.launch.py
+# Camera only (GStreamer gscam2)
+ros2 launch bluerov2_controller camera_gscam.launch.py
 ```
 
 ### Launch arguments
@@ -183,7 +193,7 @@ ros2 launch bluerov2_controller camera.launch.py
 | Argument | Default | Description |
 |---|---|---|
 | `namespace` | `bluerov2` | ROS namespace for all nodes |
-| `fcu_url` | `udp://192.168.2.1:14550@192.168.2.2` | MAVROS FCU connection URL |
+| `fcu_url` | `udp://:14550@192.168.2.2:14550` | MAVROS FCU connection URL |
 | `gcs_url` | `udp://@127.0.0.1` | Ground control station URL |
 | `run_initialization_test` | `false` | Flash lights and sweep camera on startup |
 
@@ -192,6 +202,36 @@ Example:
 ```bash
 ros2 launch bluerov2_controller bluerov2_bringup.launch.py run_initialization_test:=true
 ```
+
+## Running with Station Keeping (`plain_pid_controller`)
+
+`bluerov2_controller` natively integrates with [**`plain_pid_controller`**](https://github.com/youssiefanas/plain_pid_controller) for closed-loop 6-DOF station keeping and depth/position hold.
+
+### Architecture & Control Blending
+- `rov_controller` listens on both:
+  - `/bluerov2/cmd_vel` (manual joystick input via `teleop_twist_joy`)
+  - `/bluerov2/cmd_vel_aux` (automated PID corrections from `plain_pid_controller`)
+- In `vel_callback`, the node **sums** the auxiliary PID velocity onto the manual joystick velocity and clamps the resulting effort to valid motor PWM.
+- **Pilot Nudging / Manual Intervention:** You can lock an axis in position hold (e.g. heave or yaw) and still smoothly nudge the vehicle using the joystick sticks on surge or sway.
+- **Watchdog Timeout:** If `plain_pid_controller` stops publishing for longer than `aux_timeout_sec` (default: `0.5` seconds), auxiliary commands are safely discarded.
+
+### Complete Launch Workflow
+
+```bash
+# Terminal 1: MAVROS
+ros2 launch bluerov2_controller mavros.launch.py
+
+# Terminal 2: BlueROV2 Bringup (gamepad + controller + camera)
+ros2 launch bluerov2_controller bluerov2_bringup.launch.py
+
+# Terminal 3: State Estimation / Odometry (e.g., MIMOSA graph SLAM)
+ros2 launch mimosa bluerov2_launch_nortek_imu.py
+
+# Terminal 4: Plain PID Controller & Qt Activation Panel
+ros2 launch plain_pid_controller real.launch.py
+```
+
+> **Note on Gamepad Launch:** `bluerov2_bringup.launch.py` uses `gamepad.launch.py` by default, which correctly routes joystick commands to `/bluerov2/cmd_vel`. Do **not** use `gamepad_pid.launch.py` (which was specifically designed for the legacy `rov_pid_controller` interception pipeline).
 
 ## ArduSub Flight Modes
 
@@ -229,7 +269,13 @@ All button mappings are configurable via `config/controller_params.yaml`.
 
 ### config/controller_params.yaml
 
-Control loop rate, PWM limits, servo settings, joystick button mappings. See the file for all parameters.
+Control loop rate, PWM limits, servo settings, joystick button mappings, and auxiliary input timeout:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `control_loop_rate` | `20.0` | Controller execution rate in Hz |
+| `aux_timeout_sec` | `0.5` | Watchdog timeout for `/bluerov2/cmd_vel_aux` (PID input) |
+| `service_timeout_sec` | `4.0` | Timeout for MAVROS service calls |
 
 ### config/camera_params.yaml
 
@@ -243,9 +289,11 @@ Video port, decoder selection, resize settings, watchdog configuration.
 | `resize_width` | `960` | Resize target width |
 | `resize_height` | `540` | Resize target height |
 
-### config/xbox_teleop.yaml
+### config/xbox_teleop.yaml & config/xbox_teleop_pid.yaml
 
-Axis mappings and scale factors for `teleop_twist_joy`. Customize for different controllers.
+Axis mappings and scale factors for `teleop_twist_joy`.
+- `xbox_teleop.yaml`: Standard manual teleoperation profile (linear scale: 0.6, angular scale: 0.3).
+- `xbox_teleop_pid.yaml`: Alternative higher-sensitivity profile (linear scale: 0.7, angular scale: 0.7).
 
 ## Camera Streaming
 
