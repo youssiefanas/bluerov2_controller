@@ -33,6 +33,7 @@ def generate_launch_description():
     # Gamepad (joy_node + teleop_twist_joy)
     gamepad_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
+            # os.path.join(pkg_share, 'launch', 'gamepad_pid.launch.py')),
             os.path.join(pkg_share, 'launch', 'gamepad.launch.py')),
         launch_arguments={
             'namespace': LaunchConfiguration('namespace'),
@@ -52,7 +53,7 @@ def generate_launch_description():
     # Camera Streamer
     camera_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(pkg_share, 'launch', 'camera.launch.py')),
+            os.path.join(pkg_share, 'launch', 'camera_gscam.launch.py')),
         launch_arguments={
             'namespace': LaunchConfiguration('namespace'),
         }.items(),
@@ -60,10 +61,10 @@ def generate_launch_description():
 
     return LaunchDescription([
         namespace_arg,
-        fcu_url_arg,
-        gcs_url_arg,
+        # fcu_url_arg,
+        # gcs_url_arg,
         run_init_test_arg,
-        mavros_launch,
+        # mavros_launch,
         gamepad_launch,
         controller_launch,
         camera_launch,

@@ -39,7 +39,7 @@ def generate_launch_description():
         name='teleop_twist_joy_node',
         namespace=LaunchConfiguration('namespace'),
         parameters=[
-            os.path.join(pkg_share, 'config', 'xbox_teleop.yaml'),
+            os.path.join(pkg_share, 'config', 'xbox_teleop_pid.yaml'),
         ],
         remappings=[
             # Keeps teleop from driving rov_controller directly; rov_pid_controller

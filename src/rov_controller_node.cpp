@@ -34,6 +34,7 @@ tilt_angle_min_     = this->declare_parameter("tilt_angle_min", -90.0);
   btn_cam_tilt_reset_ = this->declare_parameter("btn_cam_tilt_reset", 9);
 
   service_timeout_sec_ = this->declare_parameter("service_timeout_sec", 4.0);
+  aux_timeout_sec_ = this->declare_parameter("aux_timeout_sec", 0.5);
   bool run_init_test = this->declare_parameter("run_initialization_test", false);
 
   // MAVROS CommandLong service for arm/disarm (cmd 400) and servo control (cmd 183)
@@ -73,6 +74,12 @@ tilt_angle_min_     = this->declare_parameter("tilt_angle_min", -90.0);
   cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
       "cmd_vel", sensor_qos,
       std::bind(&RovControllerNode::vel_callback, this, std::placeholders::_1));
+
+  // Auxiliary cmd_vel (e.g. from plain_pid_controller) summed into vel_callback.
+  cmd_vel_aux_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+      "cmd_vel_aux", sensor_qos,
+      std::bind(&RovControllerNode::vel_aux_callback, this,
+                std::placeholders::_1));
 
   // IMU orientation and angular velocity from MAVROS (Pixhawk flight controller)
   imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
@@ -225,18 +232,49 @@ void RovControllerNode::joy_callback(
 }
 
 // ---------------------------------------------------------------------------
-// Velocity callback - maps joystick velocity to PWM (all flight modes)
+// Velocity callback - maps joystick velocity (+ optional aux) to PWM
 // ---------------------------------------------------------------------------
 void RovControllerNode::vel_callback(
     const geometry_msgs::msg::Twist::SharedPtr msg) {
-  int roll  = map_value_scale_saturate(msg->angular.x);
-  int pitch = map_value_scale_saturate(msg->angular.y);
-  int yaw   = map_value_scale_saturate(-msg->angular.z);
-  int surge = map_value_scale_saturate(msg->linear.x);
-  int sway  = map_value_scale_saturate(-msg->linear.y);
-  int heave = map_value_scale_saturate(msg->linear.z);
+  // Start from the joystick command...
+  double lin_x = msg->linear.x;
+  double lin_y = msg->linear.y;
+  double lin_z = msg->linear.z;
+  double ang_x = msg->angular.x;
+  double ang_y = msg->angular.y;
+  double ang_z = msg->angular.z;
+
+  // ...and add the auxiliary command (e.g. PID hold) if it's fresh enough.
+  if (cmd_vel_aux_seen_) {
+    const double age = (this->now() - cmd_vel_aux_stamp_).seconds();
+    if (aux_timeout_sec_ <= 0.0 || age <= aux_timeout_sec_) {
+      lin_x += cmd_vel_aux_.linear.x;
+      lin_y += cmd_vel_aux_.linear.y;
+      lin_z += cmd_vel_aux_.linear.z;
+      ang_x += cmd_vel_aux_.angular.x;
+      ang_y += cmd_vel_aux_.angular.y;
+      ang_z += cmd_vel_aux_.angular.z;
+    }
+  }
+
+  int roll  = map_value_scale_saturate(ang_x);
+  int pitch = map_value_scale_saturate(ang_y);
+  int yaw   = map_value_scale_saturate(-ang_z);
+  int surge = map_value_scale_saturate(lin_x);
+  int sway  = map_value_scale_saturate(-lin_y);
+  int heave = map_value_scale_saturate(lin_z);
 
   set_override_rcin(pitch, roll, heave, yaw, surge, sway);
+}
+
+// ---------------------------------------------------------------------------
+// Auxiliary velocity callback - latches latest aux Twist + stamp
+// ---------------------------------------------------------------------------
+void RovControllerNode::vel_aux_callback(
+    const geometry_msgs::msg::Twist::SharedPtr msg) {
+  cmd_vel_aux_ = *msg;
+  cmd_vel_aux_stamp_ = this->now();
+  cmd_vel_aux_seen_ = true;
 }
 
 // ---------------------------------------------------------------------------

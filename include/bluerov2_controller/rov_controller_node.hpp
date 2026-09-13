@@ -81,6 +81,13 @@ private:
   void vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
 
   /**
+   * @brief Auxiliary velocity callback. Latches the latest aux Twist + timestamp;
+   * it is summed onto the joystick cmd_vel inside vel_callback and decays to zero
+   * after aux_timeout_sec_ of silence.
+   */
+  void vel_aux_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
+
+  /**
    * @brief IMU data callback that converts quaternion orientation to Euler angles and publishes angular state.
    * @param msg Imu message with orientation quaternion and angular velocity from MAVROS.
    */
@@ -161,6 +168,8 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
   /// Velocity commands from teleop_twist_joy mapping joystick axes to surge/sway/heave/roll/pitch/yaw
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
+  /// Auxiliary velocity input summed onto cmd_vel before PWM (e.g. plain_pid_controller output)
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_aux_sub_;
   /// IMU orientation and angular velocity from MAVROS (Pixhawk flight controller)
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
   /// Barometer-based relative altitude from MAVROS for depth measurement
@@ -191,6 +200,12 @@ private:
   // State
   FlightMode flight_mode_{FlightMode::MANUAL};
   bool armed_{false};
+
+  // Auxiliary cmd_vel (e.g. from plain_pid_controller) latched between joystick ticks.
+  geometry_msgs::msg::Twist cmd_vel_aux_;
+  rclcpp::Time cmd_vel_aux_stamp_;
+  bool cmd_vel_aux_seen_{false};
+  double aux_timeout_sec_{0.5};
 
   // Servo state
   double tilt_angle_;  // camera mount pitch in degrees
